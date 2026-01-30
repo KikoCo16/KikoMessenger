@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>KikoMessenger V2</title>
+    <link id="manifest-placeholder" rel="manifest">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-dark: #202225;
+            --bg-sidebar: #2f3136;
+            --bg-chat: #36393f;
+            --accent: #5865f2;
+            --text-main: #dcddde;
+            --danger: #ed4245;
+            --success: #3ba55c;
+        }
+
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; }
+        
+        /* SIDEBAR */
+        .sidebar { width: 280px; background: var(--bg-sidebar); display: flex; flex-direction: column; flex-shrink: 0; transition: transform 0.3s; z-index: 100; }
+        .sidebar-header { padding: 20px; font-weight: bold; border-bottom: 1px solid #202225; }
+        .channel-list { flex-grow: 1; overflow-y: auto; padding: 10px; }
+        
+        .category { color: #8e9297; font-size: 0.75rem; text-transform: uppercase; font-weight: bold; margin-top: 20px; margin-bottom: 5px; padding-left: 5px; }
+        .channel { padding: 10px; margin: 2px 0; border-radius: 4px; cursor: pointer; color: #8e9297; display: flex; flex-direction: column; }
+        .channel-name { display: flex; align-items: center; }
+        .channel:hover { background: rgba(79,84,92,0.32); color: var(--text-main); }
+        .channel.active { background: rgba(79,84,92,0.6); color: white; }
+        .channel i { margin-right: 8px; width: 20px; text-align: center; }
+        
+        /* USERS IN VOICE */
+        .voice-users { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; padding-left: 28px; }
+        .voice-user-img { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--success); }
+
+        /* USER BAR */
+        .user-bar { background: #292b2f; padding: 10px; display: flex; align-items: center; justify-content: space-between; }
+        .avatar { width: 35px; height: 35px; border-radius: 50%; object-fit: cover; background: gray; }
+
+        /* CHAT AREA */
+        .chat-area { flex-grow: 1; display: flex; flex-direction: column; background: var(--bg-chat); position: relative; }
+        .chat-header { padding: 15px; border-bottom: 1px solid #26272d; font-weight: bold; display: flex; align-items: center; }
+        .mobile-menu-btn { display: none; margin-right: 15px; background: none; border: none; color: white; font-size: 1.2rem; }
+        
+        #messages-container { flex-grow: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        .msg { display: flex; gap: 15px; }
+        .msg-content { display: flex; flex-direction: column; max-width: 80%; }
+        .msg-author { font-weight: bold; margin-right: 5px; }
+        .msg-time { font-size: 0.7rem; color: #72767d; }
+        .msg-image { max-width: 100%; border-radius: 8px; margin-top: 5px; cursor: pointer; }
+
+        /* INPUT */
+        .input-area { padding: 20px; background: var(--bg-chat); }
+        .input-wrapper { background: #40444b; border-radius: 8px; padding: 10px; display: flex; align-items: center; gap: 10px; }
+        .chat-input { background: transparent; border: none; color: white; flex-grow: 1; outline: none; }
+        
+        /* SETTINGS & AUTH */
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; display: flex; justify-content: center; align-items: center; }
+        .modal-content { background: #36393f; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; text-align: center; }
+        .hidden { display: none !important; }
+        
+        @media (max-width: 768px) {
+            .sidebar { position: fixed; height: 100%; transform: translateX(-100%); }
+            .sidebar.open { transform: translateX(0); box-shadow: 5px 0 15px black; }
+            .mobile-menu-btn { display: block; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="auth-ui" class="modal" style="background:var(--bg-dark);">
+        <div class="modal-content">
+            <h2 id="auth-title">Connexion</h2>
+            <input type="text" id="auth-pseudo" placeholder="Pseudo" class="chat-input" style="background:#202225; padding:10px; width:90%; margin:10px 0; border:1px solid #202225;" hidden>
+            <input type="email" id="auth-email" placeholder="Email" class="chat-input" style="background:#202225; padding:10px; width:90%; margin:10px 0; border:1px solid #202225;">
+            <input type="password" id="auth-pass" placeholder="Mot de passe" class="chat-input" style="background:#202225; padding:10px; width:90%; margin:10px 0; border:1px solid #202225;">
+            <button id="auth-btn" style="width:100%; padding:10px; background:var(--accent); color:white; border:none; border-radius:5px; margin-top:10px;">Se connecter</button>
+            <p id="auth-toggle" style="margin-top:15px; color:var(--accent); cursor:pointer;">Créer un compte</p>
+        </div>
+    </div>
+
+    <div id="app-ui" class="hidden" style="display:flex; width:100%; height:100%;">
+        
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">KikoMessenger <span style="color:orange; font-size:0.6rem;">V2</span></div>
+            <div class="channel-list">
+                <div class="category">Salons Textuels</div>
+                <div class="channel active" onclick="changeChannel('general')"><div class="channel-name"><i class="fas fa-hashtag"></i> général</div></div>
+                <div class="channel" onclick="changeChannel('blabla')"><div class="channel-name"><i class="fas fa-hashtag"></i> blabla</div></div>
+                <div class="channel" onclick="changeChannel('media')"><div class="channel-name"><i class="fas fa-images"></i> média</div></div>
+                
+                <div class="category">Salons Vocaux</div>
+                <div class="channel" onclick="joinVoice('vocal1')">
+                    <div class="channel-name"><i class="fas fa-volume-up"></i> Vocal 1</div>
+                    <div class="voice-users" id="users-vocal1"></div>
+                </div>
+                <div class="channel" onclick="joinVoice('vocal2')">
+                    <div class="channel-name"><i class="fas fa-volume-up"></i> Vocal 2</div>
+                    <div class="voice-users" id="users-vocal2"></div>
+                </div>
+            </div>
+            
+            <div class="user-bar">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <img id="my-avatar" src="" class="avatar" onerror="this.src='https://ui-avatars.com/api/?background=random'">
+                    <div style="font-weight:bold; font-size:0.9rem;" id="my-pseudo">...</div>
+                </div>
+                <button onclick="openSettings()" style="background:none; border:none; color:white;"><i class="fas fa-cog"></i></button>
+            </div>
+        </div>
+
+        <div class="chat-area" onclick="closeSidebarMobile()">
+            <div class="chat-header">
+                <button class="mobile-menu-btn" onclick="event.stopPropagation(); document.getElementById('sidebar').classList.toggle('open');"><i class="fas fa-bars"></i></button>
+                <span id="header-title"># général</span>
+            </div>
+
+            <div id="messages-container"></div>
+            
+            <div id="voice-interface" class="hidden" style="flex-grow:1; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                <i class="fas fa-microphone-alt" style="font-size:60px; color:var(--success); margin-bottom:20px;"></i>
+                <h2>Connecté en vocal</h2>
+                <button onclick="leaveVoice()" style="background:var(--danger); padding:10px 20px; border:none; color:white; border-radius:5px;">Quitter</button>
+            </div>
+
+            <div class="input-area" id="input-area">
+                <div class="input-wrapper">
+                    <label for="img-input" style="cursor:pointer; color:#b9bbbe;"><i class="fas fa-plus-circle"></i></label>
+                    <input type="file" id="img-input" accept="image/*" hidden>
+                    <input type="text" id="msg-input" class="chat-input" placeholder="Envoyer un message...">
+                    <button id="send-btn" style="background:none; border:none; color:var(--accent);"><i class="fas fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <span onclick="document.getElementById('settings-modal').classList.add('hidden')" style="float:right; cursor:pointer;">&times;</span>
+            <h3>Paramètres</h3>
+            <img id="preview-avatar" src="" class="avatar" style="width:80px; height:80px; margin-bottom:10px;">
+            <br>
+            <label for="avatar-upload" style="color:var(--accent); cursor:pointer;">Changer Photo</label>
+            <input type="file" id="avatar-upload" accept="image/*" hidden>
+            <br><br>
+            <input type="text" id="edit-pseudo" class="chat-input" style="background:#202225; padding:10px; border:1px solid #444; width:80%; text-align:center;">
+            <br><br>
+            <button onclick="saveProfile()" style="background:var(--success); padding:10px; width:80%; border:none; border-radius:5px; color:white;">Enregistrer</button>
+            <button onclick="signOut(auth)" style="background:var(--danger); padding:10px; width:80%; border:none; border-radius:5px; color:white; margin-top:10px;">Déconnexion</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, addDoc, query, where, onSnapshot, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAEjPw8UHPzva9Ccvqm3mG1z19SGIio3pk",
+            authDomain: "mydiscord-cf98a.firebaseapp.com",
+            projectId: "mydiscord-cf98a",
+            storageBucket: "mydiscord-cf98a.firebasestorage.app",
+            messagingSenderId: "834303173284",
+            appId: "1:834303173284:web:1d10a71974926cfa77fc31"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        // --- MANIFEST ---
+        const manifest = { "name": "KikoMessenger", "short_name": "Kiko", "start_url": ".", "display": "standalone", "background_color": "#2c2f33", "theme_color": "#202225", "icons": [{"src": "https://cdn-icons-png.flaticon.com/512/5968/5968756.png", "sizes": "512x512", "type": "image/png"}] };
+        document.querySelector('#manifest-placeholder').setAttribute('href', URL.createObjectURL(new Blob([JSON.stringify(manifest)], {type: 'application/json'})));
+
+        // --- AUTH ---
+        let isLogin = true;
+        document.getElementById('auth-toggle').onclick = () => {
+            isLogin = !isLogin;
+            document.getElementById('auth-pseudo').hidden = isLogin;
+            document.getElementById('auth-title').innerText = isLogin ? "Connexion" : "Inscription";
+            document.getElementById('auth-btn').innerText = isLogin ? "Se connecter" : "S'inscrire";
+        };
+
+        document.getElementById('auth-btn').onclick = async () => {
+            const email = document.getElementById('auth-email').value;
+            const pass = document.getElementById('auth-pass').value;
+            try {
+                if (isLogin) {
+                    await signInWithEmailAndPassword(auth, email, pass);
+                } else {
+                    const pseudo = document.getElementById('auth-pseudo').value;
+                    const res = await createUserWithEmailAndPassword(auth, email, pass);
+                    await setDoc(doc(db, "users", res.user.uid), {
+                        pseudo: pseudo,
+                        email: email,
+                        photoURL: `https://ui-avatars.com/api/?name=${pseudo}&background=random`,
+                        currentVoiceChannel: null,
+                        lastPseudoChange: null
+                    });
+                }
+            } catch (e) { alert("Erreur: " + e.message); }
+        };
+
+        let currentUser = null;
+        let currentChannel = 'general';
+        let unsubMsg = null;
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                document.getElementById('auth-ui').classList.add('hidden');
+                document.getElementById('app-ui').classList.remove('hidden');
+                
+                // Ecouter les changements sur MON profil
+                onSnapshot(doc(db, "users", user.uid), (doc) => {
+                    currentUser = doc.data();
+                    currentUser.uid = user.uid;
+                    document.getElementById('my-pseudo').innerText = currentUser.pseudo;
+                    document.getElementById('my-avatar').src = currentUser.photoURL;
+                });
+
+                // Ecouter TOUS les utilisateurs pour voir qui est en vocal
+                onSnapshot(collection(db, "users"), (snapshot) => {
+                    // Reset UI Vocal
+                    document.getElementById('users-vocal1').innerHTML = '';
+                    document.getElementById('users-vocal2').innerHTML = '';
+                    
+                    snapshot.forEach(doc => {
+                        const u = doc.data();
+                        if (u.currentVoiceChannel) {
+                            const el = document.getElementById('users-' + u.currentVoiceChannel);
+                            if (el) el.innerHTML += `<img src="${u.photoURL}" class="voice-user-img" title="${u.pseudo}">`;
+                        }
+                    });
+                });
+
+                changeChannel('general');
+
+            } else {
+                document.getElementById('auth-ui').classList.remove('hidden');
+                document.getElementById('app-ui').classList.add('hidden');
+            }
+        });
+
+        // --- NAVIGATION ---
+        window.changeChannel = (channelId) => {
+            if (currentChannel === channelId) return;
+            currentChannel = channelId;
+            
+            document.getElementById('header-title').innerText = "# " + channelId;
+            document.getElementById('voice-interface').classList.add('hidden');
+            document.getElementById('messages-container').classList.remove('hidden');
+            document.getElementById('input-area').classList.remove('hidden');
+
+            document.querySelectorAll('.channel').forEach(c => c.classList.remove('active'));
+            event.currentTarget?.classList.add('active');
+
+            loadMessages(channelId);
+            window.closeSidebarMobile();
+            
+            // Si on était en vocal, on quitte
+            if (currentUser && currentUser.currentVoiceChannel) {
+                updateDoc(doc(db, "users", auth.currentUser.uid), { currentVoiceChannel: null });
+            }
+        };
+
+        window.joinVoice = (voiceId) => {
+            currentChannel = voiceId;
+            document.getElementById('messages-container').classList.add('hidden');
+            document.getElementById('input-area').classList.add('hidden');
+            document.getElementById('voice-interface').classList.remove('hidden');
+            document.getElementById('header-title').innerText = "🔊 " + voiceId;
+            
+            updateDoc(doc(db, "users", auth.currentUser.uid), { currentVoiceChannel: voiceId });
+            window.closeSidebarMobile();
+        };
+
+        window.leaveVoice = () => changeChannel('general');
+        window.closeSidebarMobile = () => document.getElementById('sidebar').classList.remove('open');
+        window.openSettings = () => {
+            document.getElementById('settings-modal').classList.remove('hidden');
+            document.getElementById('edit-pseudo').value = currentUser.pseudo;
+            document.getElementById('preview-avatar').src = currentUser.photoURL;
+        };
+
+        // --- CHAT SYSTEM (FIXED) ---
+        function loadMessages(channelId) {
+            if (unsubMsg) unsubMsg();
+            
+            // ASTUCE: On ne met PAS de orderBy dans la requête pour éviter l'erreur d'index
+            const q = query(collection(db, "messages"), where("channel", "==", channelId));
+            
+            unsubMsg = onSnapshot(q, (snapshot) => {
+                const container = document.getElementById('messages-container');
+                let messages = [];
+                snapshot.forEach(doc => messages.push(doc.data()));
+                
+                // On trie en JavaScript, c'est plus simple !
+                messages.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+
+                container.innerHTML = "";
+                messages.forEach(msg => {
+                    const date = msg.createdAt ? new Date(msg.createdAt.seconds * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '...';
+                    let content = `<div style="word-break:break-word;">${msg.text}</div>`;
+                    if (msg.image) content = `<img src="${msg.image}" class="msg-image" onclick="window.open(this.src)">`;
+
+                    container.innerHTML += `
+                        <div class="msg">
+                            <img src="${msg.userPhoto}" class="avatar" onerror="this.src='https://ui-avatars.com/api/?background=random'">
+                            <div class="msg-content">
+                                <div><span class="msg-author">${msg.pseudo}</span> <span class="msg-time">${date}</span></div>
+                                ${content}
+                            </div>
+                        </div>`;
+                });
+                container.scrollTop = container.scrollHeight;
+            });
+        }
+
+        // ENVOI MESSAGE
+        document.getElementById('send-btn').onclick = async () => {
+            const txt = document.getElementById('msg-input').value;
+            if (txt.trim()) {
+                await addDoc(collection(db, "messages"), {
+                    text: txt, channel: currentChannel, pseudo: currentUser.pseudo, userPhoto: currentUser.photoURL,
+                    createdAt: serverTimestamp()
+                });
+                document.getElementById('msg-input').value = "";
+            }
+        };
+
+        // ENVOI IMAGE
+        document.getElementById('img-input').onchange = async (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                try {
+                    const sRef = ref(storage, `chat/${Date.now()}_${file.name}`);
+                    const snap = await uploadBytes(sRef, file);
+                    const url = await getDownloadURL(snap.ref);
+                    await addDoc(collection(db, "messages"), {
+                        text: "", image: url, channel: currentChannel, pseudo: currentUser.pseudo, userPhoto: currentUser.photoURL,
+                        createdAt: serverTimestamp()
+                    });
+                } catch(err) { alert("Erreur Image (Active Storage !): " + err.message); }
+            }
+        };
+
+        // SAVE PROFILE
+        window.saveProfile = async () => {
+            const newPseudo = document.getElementById('edit-pseudo').value;
+            const file = document.getElementById('avatar-upload').files[0];
+            let url = currentUser.photoURL;
+
+            // Verif pseudo 30 jours
+            if (newPseudo !== currentUser.pseudo) {
+                const last = currentUser.lastPseudoChange?.toDate() || new Date(0);
+                if ((new Date() - last) < 30*24*60*60*1000) return alert("Attends 30 jours pour changer de pseudo !");
+            }
+
+            if (file) {
+                try {
+                    const sRef = ref(storage, `avatars/${currentUser.uid}`);
+                    const snap = await uploadBytes(sRef, file);
+                    url = await getDownloadURL(snap.ref);
+                } catch(err) { return alert("Erreur Upload Avatar: " + err.message); }
+            }
+
+            await updateDoc(doc(db, "users", currentUser.uid), {
+                pseudo: newPseudo, photoURL: url,
+                lastPseudoChange: (newPseudo !== currentUser.pseudo) ? serverTimestamp() : currentUser.lastPseudoChange
+            });
+            document.getElementById('settings-modal').classList.add('hidden');
+        };
+
+        window.signOut = signOut;
+    </script>
+</body>
+</html>
