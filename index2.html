@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyDiscord Mobile</title>
+    <link id="manifest-placeholder" rel="manifest">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #2c2f33; color: white; margin: 0; padding: 10px; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+        .auth-card { background: #23272a; padding: 25px; border-radius: 10px; box-shadow: 0 8px 16px rgba(0,0,0,0.3); margin: auto; width: 100%; max-width: 350px; }
+        h2, h3 { text-align: center; margin-top: 0; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 5px; border: none; box-sizing: border-box; background: #40444b; color: white; }
+        button { width: 100%; padding: 12px; background: #5865f2; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button:hover { background: #4752c4; }
+        #chat-box { flex-grow: 1; overflow-y: auto; background: #36393f; padding: 15px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #202225; }
+        .msg { margin-bottom: 12px; padding: 8px; border-radius: 5px; background: #40444b; word-wrap: break-word; }
+        .msg b { color: #00aff4; }
+        .admin-tag { color: #ed4245; font-size: 0.7rem; text-transform: uppercase; margin-left: 5px; border: 1px solid #ed4245; padding: 2px 4px; border-radius: 3px; }
+        .hidden { display: none !important; }
+        .footer-input { display: flex; gap: 8px; padding-bottom: 5px; }
+        #msg-input { margin: 0; }
+        #btn-send { width: 80px; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-ui" class="auth-card">
+        <h2 id="title">Connexion</h2>
+        <input type="text" id="pseudo" class="hidden" placeholder="Ton Pseudo (ex: Rick)">
+        <input type="email" id="email" placeholder="Email">
+        <input type="password" id="password" placeholder="Mot de passe">
+        <button id="btn-action">Se connecter</button>
+        <p id="toggle-text" style="text-align:center; font-size: 0.9rem; margin-top: 15px; cursor: pointer; color: #00aff4;">Pas de compte ? S'inscrire</p>
+    </div>
+
+    <div id="app-ui" class="hidden" style="display: flex; flex-direction: column; height: 100%;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 style="margin:0;"># général</h3>
+            <button onclick="logout()" style="width: auto; padding: 6px 12px; background: #ed4245; font-size: 0.8rem;">Quitter</button>
+        </div>
+        
+        <div id="chat-box"></div>
+        
+        <div id="admin-panel" class="hidden" style="background: rgba(237, 66, 69, 0.1); border: 1px solid #ed4245; padding: 10px; margin-bottom: 10px; border-radius: 5px;">
+            <small style="color:#ed4245">MODE ADMIN ACTIF</small>
+        </div>
+
+        <div class="footer-input">
+            <input type="text" id="msg-input" placeholder="Envoyer un message...">
+            <button id="btn-send">S'envoi</button>
+        </div>
+    </div>
+
+    <script type="module">
+        // Importation des outils Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // Ta configuration Firebase (déjà remplie avec tes clés)
+        const firebaseConfig = {
+            apiKey: "AIzaSyAEjPw8UHPzva9Ccvqm3mG1z19SGIio3pk",
+            authDomain: "mydiscord-cf98a.firebaseapp.com",
+            projectId: "mydiscord-cf98a",
+            storageBucket: "mydiscord-cf98a.firebasestorage.app",
+            messagingSenderId: "834303173284",
+            appId: "1:834303173284:web:1d10a71974926cfa77fc31"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // --- MANIFEST PWA DYNAMIQUE ---
+        const manifest = {
+            "name": "MyDiscord",
+            "short_name": "MyDiscord",
+            "start_url": ".",
+            "display": "standalone",
+            "background_color": "#2c2f33",
+            "theme_color": "#5865f2",
+            "icons": [{"src": "https://cdn-icons-png.flaticon.com/512/5968/5968756.png", "sizes": "512x512", "type": "image/png"}]
+        };
+        const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+        document.querySelector('#manifest-placeholder').setAttribute('href', URL.createObjectURL(blob));
+
+        // --- GESTION AUTHENTIFICATION ---
+        let isLogin = true;
+        const toggleText = document.getElementById('toggle-text');
+        const pseudoInput = document.getElementById('pseudo');
+        const btnAction = document.getElementById('btn-action');
+
+        toggleText.onclick = () => {
+            isLogin = !isLogin;
+            pseudoInput.classList.toggle('hidden');
+            document.getElementById('title').innerText = isLogin ? "Connexion" : "Inscription";
+            toggleText.innerText = isLogin ? "Pas de compte ? S'inscrire" : "Déjà un compte ? Se connecter";
+            btnAction.innerText = isLogin ? "Se connecter" : "S'inscrire";
+        };
+
+        btnAction.onclick = async () => {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const pseudo = pseudoInput.value || "Anonyme";
+
+            try {
+                if (isLogin) {
+                    await signInWithEmailAndPassword(auth, email, password);
+                } else {
+                    const res = await createUserWithEmailAndPassword(auth, email, password);
+                    // Ton email devient Admin automatiquement
+                    const role = (email.toLowerCase() === "henriquebdscosta33@gmail.com") ? "admin" : "user";
+                    
+                    await setDoc(doc(db, "users", res.user.uid), {
+                        pseudo: pseudo,
+                        email: email,
+                        role: role,
+                        isBanned: false
+                    });
+                }
+            } catch (e) { alert("Erreur: " + e.message); }
+        };
+
+        // --- LOGIQUE DU CHAT ET ÉTAT UTILISATEUR ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                const userDoc = await getDoc(doc(db, "users", user.uid));
+                const userData = userDoc.data() || { pseudo: "Utilisateur", role: "user" };
+
+                if (userData.isBanned) {
+                    alert("Désolé, tu es banni de cette application.");
+                    signOut(auth);
+                    return;
+                }
+
+                document.getElementById('auth-ui').classList.add('hidden');
+                document.getElementById('app-ui').classList.remove('hidden');
+
+                if (userData.role === 'admin') {
+                    document.getElementById('admin-panel').classList.remove('hidden');
+                }
+
+                // Chargement des messages en temps réel
+                const q = query(collection(db, "messages"), orderBy("createdAt", "asc"));
+                onSnapshot(q, (snap) => {
+                    const box = document.getElementById('chat-box');
+                    box.innerHTML = "";
+                    snap.forEach(d => {
+                        const m = d.data();
+                        const time = m.createdAt ? new Date(m.createdAt.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : "...";
+                        box.innerHTML += `
+                            <div class="msg">
+                                <small style="font-size:0.6rem; color:#8e9297">${time}</small><br>
+                                <b>${m.pseudo}</b>: ${m.text}
+                            </div>`;
+                    });
+                    box.scrollTop = box.scrollHeight; // Scroll vers le bas
+                });
+            } else {
+                document.getElementById('auth-ui').classList.remove('hidden');
+                document.getElementById('app-ui').classList.add('hidden');
+            }
+        });
+
+        // ENVOI DE MESSAGE
+        document.getElementById('btn-send').onclick = async () => {
+            const input = document.getElementById('msg-input');
+            const text = input.value.trim();
+            if (text) {
+                const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+                await addDoc(collection(db, "messages"), {
+                    text: text,
+                    pseudo: userDoc.data().pseudo,
+                    uid: auth.currentUser.uid,
+                    createdAt: serverTimestamp()
+                });
+                input.value = "";
+            }
+        };
+
+        // Permettre l'envoi avec la touche Entrée
+        document.getElementById('msg-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') document.getElementById('btn-send').click();
+        });
+
+        window.logout = () => signOut(auth);
+    </script>
+</body>
+</html>
